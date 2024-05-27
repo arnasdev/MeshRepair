@@ -37,7 +37,8 @@
 
  <PropertyGroup>
     <PublishSingleFile>true</PublishSingleFile>
-    <RuntimeIdentifier>win-x64</RuntimeIdentifier> <!-- or any other target runtime -->
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <Version>0.0.2</Version> <!-- or any other target runtime -->
  </PropertyGroup>
 
   <ItemGroup>

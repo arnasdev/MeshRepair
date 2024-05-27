@@ -1,11 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.IO;
-using System.Numerics;
-using System.Runtime.InteropServices;
-using System.Runtime.InteropServices.WindowsRuntime;
+using System.Threading;
 using System.Threading.Tasks;
-using Windows.Foundation;
 using Windows.Graphics.Printing3D;
 using Windows.Storage;
 using Windows.Storage.Streams;
@@ -47,6 +43,7 @@ namespace MeshRepairCLI
                     model = await package.LoadModelFromPackageAsync(inputStream);
                 }
 
+                // If the model can be verified, don't repair
                 bool preRepairVerifySuccess = await VerifyMeshes(model);
                 if (preRepairVerifySuccess)
                 {
@@ -58,17 +55,8 @@ namespace MeshRepairCLI
                     Console.WriteLine("Found errors - proceeding with repair");
                 }
 
-
-                // Repair the model
-                bool repairSuccess = await model.TryPartialRepairAsync(TimeSpan.FromSeconds(timeoutSeconds));
-                if (repairSuccess)
-                {
-                    Console.WriteLine("Attempt to repair finished, either succeeded, hit an error or hit the specified timeout.");
-                }
-                else
-                {
-                    Console.WriteLine("Encountered issues completing async operation.");
-                }
+                // Attempt repair with timeout
+                bool repairSuccess = await RepairWithTimeoutAsync(model, TimeSpan.FromSeconds(timeoutSeconds));
 
                 // Verify the fix
                 bool postRepairVerifySuccess = await VerifyMeshes(model);
@@ -98,6 +86,41 @@ namespace MeshRepairCLI
             catch (Exception ex)
             {
                 Console.WriteLine($"Error: {ex.Message}");
+            }
+        }
+
+        static async Task<bool> RepairWithTimeoutAsync(Printing3DModel model, TimeSpan timeout)
+        {
+            using(var cts = new CancellationTokenSource())
+            {
+                var repairTask = model.RepairAsync().AsTask(cts.Token);
+                var delayTask = Task.Delay(timeout, cts.Token);
+
+                var completedTask = await Task.WhenAny(repairTask, delayTask);
+                if(completedTask == repairTask)
+                {
+                    cts.Cancel();
+
+                    await repairTask;
+
+                    if(repairTask.Status == TaskStatus.RanToCompletion)
+                    {
+                        Console.WriteLine("Finished repair.");
+                        return true;
+                    }
+                    else
+                    {
+                        Console.WriteLine("Failed repair.");
+                        return false;
+                    }
+                }
+                else
+                {
+                    cts.Cancel();
+
+                    Console.WriteLine("Repair exceeded timeout, cancelled");
+                    return false;
+                }
             }
         }
 
