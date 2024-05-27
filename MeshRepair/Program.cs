@@ -1,4 +1,9 @@
 ﻿using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Numerics;
+using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.WindowsRuntime;
 using System.Threading.Tasks;
 using Windows.Foundation;
 using Windows.Graphics.Printing3D;
@@ -9,31 +14,22 @@ namespace MeshRepairCLI
 {
     class Program
     {
-        static bool overwrite = true;
         static string inputFilePath = "";
         static string outputFilePath = "";
+        static int timeoutSeconds = 60 * 10;
+        static bool overwriteOriginal = true;
+
+        static readonly string inputFilePathArgument = "inputFilePath";
+        static readonly string outputFilePathArgument = "outputFilePath";
+        static readonly string timeoutSecondsArgument = "timeoutSeconds";
+        static readonly string helpArgument = "help";
 
         static async Task Main(string[] args)
         {
-            if(args.Length == 0)
+            var arguments = ParseArguments(args);
+            if (!ValidateArguments(arguments))
             {
-                Console.WriteLine("Full paths only");
-                Console.WriteLine("Usage: MeshRepairCLI <repair_file.3mf>");
-                Console.WriteLine("or");
-                Console.WriteLine("Usage: MeshRepairCLI <input_file.3mf> <output_file.3mf>");
-            }
-
-            if (args.Length == 1)
-            {
-                overwrite = true;
-                inputFilePath = args[0];
-                outputFilePath = System.IO.Path.Join(System.IO.Path.GetDirectoryName(args[0]), "temp");
-            }
-            else if (args.Length == 2)
-            {
-                overwrite = false;
-                inputFilePath = args[0];
-                outputFilePath = args[1];
+                return;
             }
 
             try
@@ -51,13 +47,45 @@ namespace MeshRepairCLI
                     model = await package.LoadModelFromPackageAsync(inputStream);
                 }
 
+                bool preRepairVerifySuccess = await VerifyMeshes(model);
+                if (preRepairVerifySuccess)
+                {
+                    Console.WriteLine("Mesh verified with no errors, skipping repair");
+                    return;
+                }
+                else
+                {
+                    Console.WriteLine("Found errors - proceeding with repair");
+                }
+
+
                 // Repair the model
-                await model.RepairAsync();
+                bool repairSuccess = await model.TryPartialRepairAsync(TimeSpan.FromSeconds(timeoutSeconds));
+                if (repairSuccess)
+                {
+                    Console.WriteLine("Attempt to repair finished, either succeeded, hit an error or hit the specified timeout.");
+                }
+                else
+                {
+                    Console.WriteLine("Encountered issues completing async operation.");
+                }
+
+                // Verify the fix
+                bool postRepairVerifySuccess = await VerifyMeshes(model);
+                if (postRepairVerifySuccess)
+                {
+                    Console.WriteLine("Verification successful");
+                }
+                else
+                {
+                    Console.WriteLine("Failed to verify mesh, exiting without saving");
+                    return;
+                }
 
                 // Save the repaired model back into the 3MF package
                 await package.SaveModelToPackageAsync(model);
 
-                if (overwrite)
+                if (overwriteOriginal)
                 {
                     await Overwrite3MF(package, inputFile);
                 }
@@ -72,6 +100,22 @@ namespace MeshRepairCLI
                 Console.WriteLine($"Error: {ex.Message}");
             }
         }
+
+        static async Task<bool> VerifyMeshes(Printing3DModel model)
+        {
+            bool isValid = true;
+            foreach(var component in model.Components)
+            {
+                Printing3DMeshVerificationResult result = await component.Mesh.VerifyAsync(Printing3DMeshVerificationMode.FindAllErrors);
+                if (!result.IsValid)
+                {
+                    isValid = false;
+                }
+            }
+            return isValid;
+        }
+
+        #region Saving
         static async Task Overwrite3MF(Printing3D3MFPackage package, StorageFile originalFile)
         {
             // Save the 3MF seperately anyway
@@ -97,5 +141,107 @@ namespace MeshRepairCLI
             }
             saveStream.Dispose();
         }
+        #endregion
+
+        #region Arg Parsing
+        static bool ValidateArguments(Dictionary<string, string> arguments)
+        {
+            if (arguments.Count == 0)
+            {
+                ShowHelp();
+                return false;
+            }
+
+            if (arguments.ContainsKey(helpArgument))
+            {
+                ShowHelp();
+                return false;
+            }
+
+            if (!arguments.ContainsKey(inputFilePathArgument))
+            {
+                ShowHelp();
+                return false;
+            }
+
+            if (arguments.ContainsKey(inputFilePathArgument) && !arguments.ContainsKey(outputFilePathArgument))
+            {
+                overwriteOriginal = true;
+                inputFilePath = GetArgumentValue(arguments, inputFilePathArgument);
+                outputFilePath = System.IO.Path.Join(System.IO.Path.GetDirectoryName(inputFilePath), "temp");
+            }
+            else if (arguments.ContainsKey(inputFilePathArgument) && arguments.ContainsKey(outputFilePathArgument))
+            {
+                overwriteOriginal = false;
+                inputFilePath = GetArgumentValue(arguments, inputFilePathArgument);
+                outputFilePath = GetArgumentValue(arguments, outputFilePathArgument);
+            }
+
+            timeoutSeconds = GetArgumentValue(arguments, timeoutSecondsArgument, timeoutSeconds);
+
+            return true;
+        }
+
+        static void ShowHelp()
+        {
+            Console.WriteLine("Usage:");
+            Console.WriteLine($"--{inputFilePathArgument}=<input_file_path>     Specify the input 3MF file path.");
+            Console.WriteLine($"--{outputFilePathArgument}=<output_file_path>   Optional: Specify the output 3MF file path, otherwise will overwrite the input path.");
+            Console.WriteLine($"--{timeoutSecondsArgument}=<60>                 Optional: Specify whether to repair the model. Default is 600 seconds.");
+            Console.WriteLine("--help                                           Show help information.");
+        }
+
+        static Dictionary<string, string> ParseArguments(string[] args)
+        {
+            var arguments = new Dictionary<string, string>();
+
+            foreach (var arg in args)
+            {
+                var splitArg = arg.Split('=');
+                if (splitArg.Length == 2)
+                {
+                    arguments[splitArg[0].TrimStart('-')] = splitArg[1];
+                }
+                else
+                {
+                    arguments[arg.TrimStart('-')] = null;
+                }
+            }
+
+            return arguments;
+        }
+
+        static string GetArgumentValue(Dictionary<string, string> arguments, string key, string defaultValue = "")
+        {
+            return arguments.ContainsKey(key) ? arguments[key] : defaultValue;
+        }
+
+        static bool GetArgumentValue(Dictionary<string, string> arguments, string key, bool defaultValue)
+        {
+            if (arguments.ContainsKey(key) && arguments[key] != null)
+            {
+                return bool.Parse(arguments[key]);
+            }
+            return defaultValue;
+        }
+
+        static int GetArgumentValue(Dictionary<string, string> arguments, string key, int defaultValue)
+        {
+            if (arguments.ContainsKey(key) && arguments[key] != null)
+            {
+                return int.Parse(arguments[key]);
+            }
+            return defaultValue;
+        }
+
+        static float GetArgumentValue(Dictionary<string, string> arguments, string key, float defaultValue)
+        {
+            if (arguments.ContainsKey(key) && arguments[key] != null)
+            {
+                return float.Parse(arguments[key]);
+            }
+            return defaultValue;
+        }
+        #endregion
     }
 }
