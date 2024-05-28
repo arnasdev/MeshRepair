@@ -18,17 +18,22 @@ See releases for latest compiled .exe
   ``` --help ```
   To see the usage again
 
-  # Automation
-  For further automation, I've uploaded a powershell script that utilises PrusaSlicer in order to center and export models as .3MFs, followed by this repair process. See ConvertSTL.ps1.
-  Simply edit this file to adjust the paths to your prusa-slicer.exe and MeshRepair.exe. 
+# Automation
+For further automation, I've uploaded a powershell script that utilises PrusaSlicer in order to center and export models as .3MFs, followed by this repair process. See ConvertSTL.ps1.
+Simply edit this file to adjust the paths to your prusa-slicer.exe and MeshRepair.exe. 
 
-  ## Usage
-  ConvertSTL.ps1 will find, convert, and then repair .STL files using this CLI tool. Simply edit the ps1 file in notepad or your editor of choice and add the paths to prusa-slicer.exe, and MeshRepair.exe
+## Requirements
+- Powershell (any Windows machine will have this)
+- PrusaSlicer (Slic3r or anything based on Slic3r _could_ work too)
 
-  To run it, open terminal/powershell and navigate to the containing directory
-  
-  ``` cd "C:/folder-containing-ConvertSTL.ps1" ```
 
-  Then, run the tool, passing in a folder that contains STL files
-  
-  ``` ./ConvertSTL.ps1 "C:/folder-containing-STLs" ```
+## Usage
+ConvertSTL.ps1 will find, convert, and then repair .STL files using this CLI tool. Simply edit the ps1 file in notepad or your editor of choice and add the paths to prusa-slicer.exe, and MeshRepair.exe
+
+To run it, open terminal/powershell and navigate to the containing directory
+
+``` cd "C:/folder-containing-ConvertSTL.ps1" ```
+
+Then, run the tool, passing in a folder that contains STL files
+
+``` ./ConvertSTL.ps1 "C:/folder-containing-STLs" ```
