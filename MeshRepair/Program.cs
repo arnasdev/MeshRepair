@@ -1,5 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Windows.Graphics.Printing3D;
@@ -10,24 +13,247 @@ namespace MeshRepairCLI
 {
     class Program
     {
-        static string inputFilePath = "";
+        static readonly HashSet<string> SupportedExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ".stl", ".step", ".stp", ".3mf", ".obj", ".amf"
+        };
+        static readonly string InputFilePathArg = "inputFilePath";
+        static readonly string OutputFilePathArg = "outputFilePath";
+        static readonly string TimeoutSecondsArg = "timeoutSeconds";
+        static readonly string CloneFolderHierarchyArg = "cloneFolderHierarchy";
+        static readonly string HelpArg = "help";
+
+        static string inputPath = "";
         static string outputFilePath = "";
         static int timeoutSeconds = 60 * 10;
-        static bool overwriteOriginal = true;
-
-        static readonly string inputFilePathArgument = "inputFilePath";
-        static readonly string outputFilePathArgument = "outputFilePath";
-        static readonly string timeoutSecondsArgument = "timeoutSeconds";
-        static readonly string helpArgument = "help";
+        static bool cloneFolderHierarchy = true;
+        static bool isDirectory = false;
 
         static async Task Main(string[] args)
         {
+            PrintHeader();
             var arguments = ParseArguments(args);
             if (!ValidateArguments(arguments))
             {
                 return;
             }
 
+            string[] paths;
+            List<string> failedRepairs = new List<string>();
+
+            Stopwatch sw = Stopwatch.StartNew();
+            try
+            {
+                if (IsDirectory(inputPath))
+                {
+                    // Recursively search the directory for these files and construct a string array of all of their paths
+                    paths = Directory.GetFiles(inputPath, "*.*", SearchOption.AllDirectories)
+                        .Where(file => SupportedExtensions.Contains(Path.GetExtension(file)))
+                        .ToArray();
+
+                    isDirectory = true;
+
+                    PrintColored($"Found {paths.Count()} files for conversion/repair.", ConsoleColor.Yellow);
+                }
+                else
+                {
+                    // Convert a single .3mf
+                    if (!SupportedExtensions.Contains(Path.GetExtension(inputPath)))
+                    {
+                        PrintColored("Input file format not supported for conversion to 3mf", ConsoleColor.Red);
+                        return;
+                    }
+                    paths = new string[] { inputPath };
+                }
+
+                foreach(string file in paths)
+                {
+                    PrintColored($"{file}", ConsoleColor.Yellow);
+
+                    // Construct the desired file path
+                    string convertedFilePath;
+                    if (cloneFolderHierarchy && isDirectory)
+                    {   
+                        // Copy the folder structure of the found file relative to the root (inputFilePath) for tidiness
+                        string relativePath = Path.GetRelativePath(inputPath, file);
+                        relativePath = Path.ChangeExtension(relativePath, ".3mf");
+
+                        if (outputFilePath != String.Empty)
+                        {
+                            convertedFilePath = Path.Combine(outputFilePath, "MeshRepair", relativePath);
+                        }
+                        else
+                        {
+                            convertedFilePath = Path.Combine(inputPath, "MeshRepair", relativePath);
+                        }
+                    }
+                    else
+                    {
+                        if (isDirectory)
+                        {
+                            convertedFilePath = Path.ChangeExtension(file, ".3mf");
+                        }
+                        else
+                        {
+                            convertedFilePath = Path.ChangeExtension(inputPath, ".3mf");
+                        }
+                        
+                        if (outputFilePath != String.Empty)
+                        {
+                            string fileName = Path.GetFileName(convertedFilePath);
+                            convertedFilePath = Path.Combine(outputFilePath, fileName);
+                        }
+                    }
+
+                    string dir = Path.GetDirectoryName(convertedFilePath);
+                    if (!Directory.Exists(dir))
+                    {
+                        Directory.CreateDirectory(dir);
+                    }
+
+                    // Conversion
+                    if (!Path.GetExtension(file).Equals(".3mf", StringComparison.OrdinalIgnoreCase) || outputFilePath != string.Empty)
+                    {
+                        if (Path.GetExtension(file).Equals(".3mf")) // messy, but works
+                        {
+                            PrintColored("\tInput file is already a 3mf file, copying to specified output path", ConsoleColor.Yellow);
+                        }
+                        await ConvertTo3MF(file, convertedFilePath);
+                    }
+                    else
+                    {
+                        PrintColored("\tInput file is already a 3mf file, proceeding to repair step.", ConsoleColor.Yellow);
+                        convertedFilePath = file;
+                    }
+                    
+                    // Repair
+                    if (File.Exists(convertedFilePath))
+                    {
+                        bool success = await TryRepairFile(convertedFilePath);
+                        if (!success)
+                        {
+                            failedRepairs.Add(convertedFilePath);
+                        }
+                    }
+                    else
+                    {
+                        PrintColored($"\tCan't find file {convertedFilePath}", ConsoleColor.Red);
+                        failedRepairs.Add(convertedFilePath);
+                        continue;
+                    }
+                }
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine($"{e.Message}");
+                PrintColored("Fatal error, exiting.", ConsoleColor.Red);
+                return;
+            }
+
+            sw.Stop();
+            PrintColored($"\n{sw.Elapsed.Seconds} seconds elapsed", ConsoleColor.Green);
+            PrintColored($"{paths.Count() - failedRepairs.Count}/{paths.Count()} files verified/repaired", ConsoleColor.Green);
+            foreach(var failed in failedRepairs)
+            {
+                PrintColored($"\t{failed}", ConsoleColor.Red);
+            }
+        }
+
+        #region Conversion
+        static async Task<bool> ConvertTo3MF(string inputFilePath, string outputFilePath)
+        {
+            // Get the base directory of the application
+            string exeDirectory = AppDomain.CurrentDomain.BaseDirectory;
+
+            // Construct the path to PrusaSlicer.exe
+            string prusaSlicerPath = Path.Combine(exeDirectory, "PrusaSlicer", "prusa-slicer.exe");
+
+            // Check if the PrusaSlicer executable exists
+            if (!File.Exists(prusaSlicerPath))
+            {
+                Console.WriteLine($"\tPrusaSlicer not found at {prusaSlicerPath}");
+                return false;
+            }
+
+            // Construct the arguments to pass to the executable
+            string arguments = string.Join(" ", new string[]
+            {
+                "--export-3mf",
+                "--center",
+                "0,0",
+                "-o",
+                $"\"{outputFilePath}\"",
+                $"\"{inputFilePath}\""
+            });
+
+            // Set up the process start information
+            ProcessStartInfo startInfo = new ProcessStartInfo
+            {
+                FileName = prusaSlicerPath,
+                Arguments = arguments,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+
+            try
+            {
+                using (Process process = new Process())
+                {
+                    process.StartInfo = startInfo;
+
+                    // Capture the output and error streams
+                    process.OutputDataReceived += (sender, e) =>
+                    {
+                        if (!string.IsNullOrEmpty(e.Data))
+                        {
+                            PrintColored($"\t{e.Data}", ConsoleColor.Yellow);
+                        }
+                    };
+
+                    process.ErrorDataReceived += (sender, e) =>
+                    {
+                        if (!string.IsNullOrEmpty(e.Data))
+                        {
+                            PrintColored($"\tError: {e.Data}", ConsoleColor.Red);
+                        }
+                    };
+
+                    // Start the process
+                    process.Start();
+
+                    // Begin reading the output streams
+                    process.BeginOutputReadLine();
+                    process.BeginErrorReadLine();
+
+                    // Wait for the process to exit
+                    await process.WaitForExitAsync();
+
+                    // Check the exit code to determine success
+                    if (process.ExitCode == 0)
+                    {
+                        PrintColored("\tConversion successful.", ConsoleColor.Yellow);
+                        return true;
+                    }
+                    else
+                    {
+                        PrintColored($"\tProcess exited with code {process.ExitCode}", ConsoleColor.Red);
+                        return false;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                PrintColored($"\tAn error occurred: {ex.Message}", ConsoleColor.Red);
+                return false;
+            }
+        }
+        #endregion
+
+        #region Mesh Repair
+        static async Task<bool> TryRepairFile(string inputFilePath)
+        {
             try
             {
                 // Create a blank 3MF package in memory
@@ -47,12 +273,12 @@ namespace MeshRepairCLI
                 bool preRepairVerifySuccess = await VerifyMeshes(model);
                 if (preRepairVerifySuccess)
                 {
-                    Console.WriteLine("Mesh verified with no errors, skipping repair");
-                    return;
+                    PrintColored("\tMesh verified with no errors, skipping repair", ConsoleColor.Green);
+                    return true;
                 }
                 else
                 {
-                    Console.WriteLine("Found errors - proceeding with repair");
+                    PrintColored("\tFound errors - proceeding with repair", ConsoleColor.Red);
                 }
 
                 // Attempt repair with timeout
@@ -62,30 +288,25 @@ namespace MeshRepairCLI
                 bool postRepairVerifySuccess = await VerifyMeshes(model);
                 if (postRepairVerifySuccess)
                 {
-                    Console.WriteLine("Verification successful");
+                    PrintColored("\tVerification successful", ConsoleColor.Green);
                 }
                 else
                 {
-                    Console.WriteLine("Failed to verify mesh, exiting without saving");
-                    return;
+                    PrintColored("\tFailed to verify mesh, exiting without saving", ConsoleColor.Red);
+                    return false;
                 }
 
                 // Save the repaired model back into the 3MF package
                 await package.SaveModelToPackageAsync(model);
+                // Changes don't seem to apply unless we save a seperate file - so save seperately and then overwrite the original.
+                await Overwrite3MF(package, inputFile, inputFilePath);
 
-                if (overwriteOriginal)
-                {
-                    await Overwrite3MF(package, inputFile);
-                }
-                else
-                {
-                    await SaveSeperate3MF(package);
-                }
-             
+                return true;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error: {ex.Message}");
+                PrintColored($"\tError: {ex.Message}", ConsoleColor.Red);
+                return false;
             }
         }
 
@@ -105,12 +326,12 @@ namespace MeshRepairCLI
 
                     if(repairTask.Status == TaskStatus.RanToCompletion)
                     {
-                        Console.WriteLine("Finished repair.");
+                        PrintColored("\tFinished repair.", ConsoleColor.Green);
                         return true;
                     }
                     else
                     {
-                        Console.WriteLine("Failed repair.");
+                        PrintColored("\tFailed repair.", ConsoleColor.Red);
                         return false;
                     }
                 }
@@ -118,7 +339,7 @@ namespace MeshRepairCLI
                 {
                     cts.Cancel();
 
-                    Console.WriteLine("Repair exceeded timeout, cancelled");
+                    PrintColored("\tRepair exceeded timeout, cancelled", ConsoleColor.Red);
                     return false;
                 }
             }
@@ -137,27 +358,35 @@ namespace MeshRepairCLI
             }
             return isValid;
         }
+        #endregion
 
         #region Saving
-        static async Task Overwrite3MF(Printing3D3MFPackage package, StorageFile originalFile)
+        // TODO: clean this up, Distinction was made in older code between overwriting a 3FM or saving it seperately. 
+        // We save a temp file, delete the original, then move the temp in its place.
+        static async Task Overwrite3MF(Printing3D3MFPackage package, StorageFile originalFile, string saveFilePath)
         {
-            // Save the 3MF seperately anyway
-            await SaveSeperate3MF(package);
+            string folder = Path.GetDirectoryName(saveFilePath);
+            string filename = "temp-"+Path.GetFileName(saveFilePath);
+            string temp = Path.Combine(folder, filename);
 
-            StorageFile outputFile = await StorageFile.GetFileFromPathAsync(outputFilePath);
+         
+            await SaveSeperate3MF(package, temp);
+
+            StorageFile outputFile = await StorageFile.GetFileFromPathAsync(temp);
 
             // Delete the original file
             await originalFile.DeleteAsync();
 
             // Rename the new file to the original
-            await outputFile.RenameAsync(System.IO.Path.GetFileName(inputFilePath));
+            await outputFile.RenameAsync(System.IO.Path.GetFileName(saveFilePath));
         }
 
-        static async Task SaveSeperate3MF(Printing3D3MFPackage package)
+        
+        static async Task SaveSeperate3MF(Printing3D3MFPackage package, string path)
         {
             IRandomAccessStream saveStream = await package.SaveAsync();
-            StorageFolder storageFolder = await StorageFolder.GetFolderFromPathAsync(System.IO.Path.GetDirectoryName(outputFilePath));
-            StorageFile outputFile = await storageFolder.CreateFileAsync(System.IO.Path.GetFileName(outputFilePath), CreationCollisionOption.ReplaceExisting);
+            StorageFolder storageFolder = await StorageFolder.GetFolderFromPathAsync(System.IO.Path.GetDirectoryName(path));
+            StorageFile outputFile = await storageFolder.CreateFileAsync(System.IO.Path.GetFileName(path), CreationCollisionOption.ReplaceExisting);
             using (IRandomAccessStream outputStream = await outputFile.OpenAsync(FileAccessMode.ReadWrite))
             {
                 await RandomAccessStream.CopyAsync(saveStream, outputStream);
@@ -175,32 +404,22 @@ namespace MeshRepairCLI
                 return false;
             }
 
-            if (arguments.ContainsKey(helpArgument))
+            if (arguments.ContainsKey(HelpArg))
             {
                 ShowHelp();
                 return false;
             }
 
-            if (!arguments.ContainsKey(inputFilePathArgument))
+            if (!arguments.ContainsKey(InputFilePathArg))
             {
                 ShowHelp();
                 return false;
             }
 
-            if (arguments.ContainsKey(inputFilePathArgument) && !arguments.ContainsKey(outputFilePathArgument))
-            {
-                overwriteOriginal = true;
-                inputFilePath = GetArgumentValue(arguments, inputFilePathArgument);
-                outputFilePath = System.IO.Path.Join(System.IO.Path.GetDirectoryName(inputFilePath), "temp");
-            }
-            else if (arguments.ContainsKey(inputFilePathArgument) && arguments.ContainsKey(outputFilePathArgument))
-            {
-                overwriteOriginal = false;
-                inputFilePath = GetArgumentValue(arguments, inputFilePathArgument);
-                outputFilePath = GetArgumentValue(arguments, outputFilePathArgument);
-            }
-
-            timeoutSeconds = GetArgumentValue(arguments, timeoutSecondsArgument, timeoutSeconds);
+            cloneFolderHierarchy = GetArgumentValue(arguments, CloneFolderHierarchyArg, true);
+            inputPath = GetArgumentValue(arguments, InputFilePathArg);
+            outputFilePath = GetArgumentValue(arguments, OutputFilePathArg);
+            timeoutSeconds = GetArgumentValue(arguments, TimeoutSecondsArg, timeoutSeconds);
 
             return true;
         }
@@ -208,10 +427,11 @@ namespace MeshRepairCLI
         static void ShowHelp()
         {
             Console.WriteLine("Usage:");
-            Console.WriteLine($"--{inputFilePathArgument}=<input_file_path>     Specify the input 3MF file path.");
-            Console.WriteLine($"--{outputFilePathArgument}=<output_file_path>   Optional: Specify the output 3MF file path, otherwise will overwrite the input path.");
-            Console.WriteLine($"--{timeoutSecondsArgument}=<60>                 Optional: Specify whether to repair the model. Default is 600 seconds.");
-            Console.WriteLine("--help                                           Show help information.");
+            Console.WriteLine($"--{InputFilePathArg}=<input_file_path>     Specify the path to an individual model or a folder of models to repair.");
+            Console.WriteLine($"--{CloneFolderHierarchyArg}=<true>         Optional: If a folder of models is specified, clone the folder hierarchy with the repaired files. Default is true.");
+            Console.WriteLine($"--{OutputFilePathArg}=<output_file_path>   Optional: Specify a folder to put the repaired files.");
+            Console.WriteLine($"--{TimeoutSecondsArg}=<60>                 Optional: Specify how long to repair a model before giving up. Default is 60 seconds.");
+            Console.WriteLine("--help                                      Show help information.");
         }
 
         static Dictionary<string, string> ParseArguments(string[] args)
@@ -264,6 +484,36 @@ namespace MeshRepairCLI
                 return float.Parse(arguments[key]);
             }
             return defaultValue;
+        }
+        #endregion
+
+        #region Helpers
+        static bool IsDirectory(string path)
+        {
+            if (string.IsNullOrEmpty(path))
+            {
+                throw new ArgumentException("Path is null or empty", nameof(path));
+            }
+            if (!File.Exists(path) && !Directory.Exists(path))
+            {
+                throw new FileNotFoundException("The specified path does not exist.", path);
+            }
+
+            System.IO.FileAttributes attr = File.GetAttributes(path);
+            return attr.HasFlag(System.IO.FileAttributes.Directory);
+        }
+
+        static void PrintColored(string text, ConsoleColor color)
+        {
+            Console.ForegroundColor = color;
+            Console.WriteLine(text);
+            Console.ResetColor();
+        }
+
+        static void PrintHeader()
+        {
+            PrintColored(@"MeshRepair v0.0.4 - https://github.com/arnasdev/Windows3MFRepairCLI
+-------------------------------------------------------------------", ConsoleColor.Blue);
         }
         #endregion
     }

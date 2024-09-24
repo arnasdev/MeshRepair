@@ -49,4 +49,19 @@
     <None Include="App.config" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Update="PrusaSlicer\libgmp-10.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="PrusaSlicer\libmpfr-4.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="PrusaSlicer\prusa-slicer.exe">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="PrusaSlicer\PrusaSlicer.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
 </Project>
