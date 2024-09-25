@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Windows.Graphics.Printing3D;
@@ -23,7 +24,7 @@ namespace MeshRepairCLI
         static readonly string CloneFolderHierarchyArg = "cloneFolderHierarchy";
         static readonly string HelpArg = "help";
 
-        static string inputPath = "";
+        static string inputFilePath = "";
         static string outputFilePath = "";
         static int timeoutSeconds = 60 * 10;
         static bool cloneFolderHierarchy = true;
@@ -31,6 +32,13 @@ namespace MeshRepairCLI
 
         static async Task Main(string[] args)
         {
+#if DEBUG
+            if (!Debugger.IsAttached)
+            {
+                PrintColored("Press any key after attaching debugger to continue...\n", ConsoleColor.Magenta);
+                Console.ReadKey();
+            }
+#endif
             PrintHeader();
             var arguments = ParseArguments(args);
             if (!ValidateArguments(arguments))
@@ -38,16 +46,20 @@ namespace MeshRepairCLI
                 return;
             }
 
+            // Fix any path weirdness
+            inputFilePath = Path.GetFullPath(inputFilePath);
+            outputFilePath = Path.GetFullPath(outputFilePath);
+
             string[] paths;
             List<string> failedRepairs = new List<string>();
 
             Stopwatch sw = Stopwatch.StartNew();
             try
             {
-                if (IsDirectory(inputPath))
+                if (IsDirectory(inputFilePath))
                 {
                     // Recursively search the directory for these files and construct a string array of all of their paths
-                    paths = Directory.GetFiles(inputPath, "*.*", SearchOption.AllDirectories)
+                    paths = Directory.GetFiles(inputFilePath, "*.*", SearchOption.AllDirectories)
                         .Where(file => SupportedExtensions.Contains(Path.GetExtension(file)))
                         .ToArray();
 
@@ -58,33 +70,33 @@ namespace MeshRepairCLI
                 else
                 {
                     // Convert a single .3mf
-                    if (!SupportedExtensions.Contains(Path.GetExtension(inputPath)))
+                    if (!SupportedExtensions.Contains(Path.GetExtension(inputFilePath)))
                     {
                         PrintColored("Input file format not supported for conversion to 3mf", ConsoleColor.Red);
                         return;
                     }
-                    paths = new string[] { inputPath };
+                    paths = new string[] { inputFilePath };
                 }
 
                 foreach(string file in paths)
                 {
-                    PrintColored($"{file}", ConsoleColor.Yellow);
+                    PrintColored($"\n{file}", ConsoleColor.Yellow);
 
                     // Construct the desired file path
                     string convertedFilePath;
                     if (cloneFolderHierarchy && isDirectory)
                     {   
                         // Copy the folder structure of the found file relative to the root (inputFilePath) for tidiness
-                        string relativePath = Path.GetRelativePath(inputPath, file);
+                        string relativePath = Path.GetRelativePath(inputFilePath, file);
                         relativePath = Path.ChangeExtension(relativePath, ".3mf");
 
                         if (outputFilePath != String.Empty)
                         {
-                            convertedFilePath = Path.Combine(outputFilePath, "MeshRepair", relativePath);
+                            convertedFilePath = Path.Combine(outputFilePath, relativePath);
                         }
                         else
                         {
-                            convertedFilePath = Path.Combine(inputPath, "MeshRepair", relativePath);
+                            convertedFilePath = Path.Combine(inputFilePath, "MeshRepair", relativePath);
                         }
                     }
                     else
@@ -95,7 +107,7 @@ namespace MeshRepairCLI
                         }
                         else
                         {
-                            convertedFilePath = Path.ChangeExtension(inputPath, ".3mf");
+                            convertedFilePath = Path.ChangeExtension(inputFilePath, ".3mf");
                         }
                         
                         if (outputFilePath != String.Empty)
@@ -118,7 +130,12 @@ namespace MeshRepairCLI
                         {
                             PrintColored("\tInput file is already a 3mf file, copying to specified output path", ConsoleColor.Yellow);
                         }
-                        await ConvertTo3MF(file, convertedFilePath);
+                        bool success = await ConvertTo3MF(file, convertedFilePath);
+                        if (!success)
+                        {
+                            failedRepairs.Add(convertedFilePath);
+                            continue;
+                        }
                     }
                     else
                     {
@@ -417,7 +434,7 @@ namespace MeshRepairCLI
             }
 
             cloneFolderHierarchy = GetArgumentValue(arguments, CloneFolderHierarchyArg, true);
-            inputPath = GetArgumentValue(arguments, InputFilePathArg);
+            inputFilePath = GetArgumentValue(arguments, InputFilePathArg);
             outputFilePath = GetArgumentValue(arguments, OutputFilePathArg);
             timeoutSeconds = GetArgumentValue(arguments, TimeoutSecondsArg, timeoutSeconds);
 
@@ -437,18 +454,46 @@ namespace MeshRepairCLI
         static Dictionary<string, string> ParseArguments(string[] args)
         {
             var arguments = new Dictionary<string, string>();
+            string currentKey = null;
+            StringBuilder currentValue = new StringBuilder();
 
-            foreach (var arg in args)
+            for (int i = 0; i < args.Length; i++)
             {
-                var splitArg = arg.Split('=');
-                if (splitArg.Length == 2)
+                var arg = args[i];
+
+                if (arg.StartsWith("--"))
                 {
-                    arguments[splitArg[0].TrimStart('-')] = splitArg[1];
+                    // If we're processing a previous key, save its value before moving on
+                    if (currentKey != null)
+                    {
+                        arguments[currentKey] = currentValue.ToString().Trim();
+                        currentValue.Clear();
+                    }
+
+                    // Start processing a new key
+                    currentKey = arg.Substring(2); // Remove the '--' prefix
                 }
                 else
                 {
-                    arguments[arg.TrimStart('-')] = null;
+                    if (currentKey == null)
+                    {
+                        // Handle the case where a value is provided without a key
+                        throw new ArgumentException($"Value '{arg}' provided without a corresponding key.");
+                    }
+
+                    // Append the argument to the current value
+                    if (currentValue.Length > 0)
+                    {
+                        currentValue.Append(' ');
+                    }
+                    currentValue.Append(arg);
                 }
+            }
+
+            // Add the last key-value pair after the loop ends
+            if (currentKey != null)
+            {
+                arguments[currentKey] = currentValue.ToString().Trim();
             }
 
             return arguments;
@@ -512,7 +557,8 @@ namespace MeshRepairCLI
 
         static void PrintHeader()
         {
-            PrintColored(@"MeshRepair v0.0.4 - https://github.com/arnasdev/Windows3MFRepairCLI
+            PrintColored(@"-------------------------------------------------------------------
+MeshRepair v1.0.0 - https://github.com/arnasdev/Windows3MFRepairCLI
 -------------------------------------------------------------------", ConsoleColor.Blue);
         }
         #endregion
