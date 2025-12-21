@@ -1,5 +1,5 @@
 # MeshRepair: A 3D Printing Model Repair CLI Tool
-![image](https://github.com/user-attachments/assets/194bf292-0645-4cc3-befe-ba286f73aa38)
+![image](https://github.com/user-attachments/assets/0e78e5d5-c72c-4106-a7ec-85e1ffc09ae5)
 
 
 ## About

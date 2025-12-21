@@ -1,0 +1,182 @@
+﻿<Window x:Class="MeshRepairGUI.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:ui="http://schemas.modernwpf.com/2019"
+        xmlns:local="clr-namespace:MeshRepairGUI"
+        mc:Ignorable="d"
+        ui:WindowHelper.UseModernWindowStyle="True"
+        Title="MeshRepair - 3D Model Repair Tool" 
+        Height="650" Width="900"
+        MinHeight="600" MinWidth="800"
+        WindowStartupLocation="CenterScreen"
+        Background="{DynamicResource SystemControlPageBackgroundChromeLowBrush}">
+
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <StackPanel Grid.Row="0" Margin="0,0,0,20">
+            <TextBlock Text="MeshRepair" 
+                       FontSize="28" 
+                       FontWeight="SemiBold"
+                       Foreground="{DynamicResource SystemControlForegroundBaseHighBrush}"/>
+            <TextBlock Text="Repair 3D models with ease" 
+                       FontSize="14" 
+                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                       Margin="0,4,0,0"/>
+        </StackPanel>
+
+        <!-- Input/Output Section -->
+        <ui:SimpleStackPanel Grid.Row="1" Spacing="16" Margin="0,0,0,20">
+            <!-- Input Path -->
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="100"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <TextBlock Text="Input Path:" 
+                           VerticalAlignment="Center"
+                           FontWeight="SemiBold"/>
+                
+                <TextBox x:Name="InputPathTextBox" 
+                         Grid.Column="1"
+                         Margin="8,0"
+                         ui:ControlHelper.PlaceholderText="Select a file or folder to repair..."
+                         AllowDrop="True"
+                         PreviewDragOver="OnDragOver"
+                         Drop="OnDrop"/>
+                
+                <ui:DropDownButton x:Name="InputBrowseButton" 
+                                   Grid.Column="2" 
+                                   Content="Browse" 
+                                   Width="100">
+                    <ui:DropDownButton.Flyout>
+                        <ui:MenuFlyout Placement="Bottom">
+                            <MenuItem Header="Browse for File" Click="BrowseInputFile_Click"/>
+                            <MenuItem Header="Browse for Folder" Click="BrowseInputFolder_Click"/>
+                        </ui:MenuFlyout>
+                    </ui:DropDownButton.Flyout>
+                </ui:DropDownButton>
+            </Grid>
+
+            <!-- Output Path -->
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="100"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <TextBlock Text="Output Path:" 
+                           VerticalAlignment="Center"
+                           FontWeight="SemiBold"/>
+                
+                <TextBox x:Name="OutputPathTextBox" 
+                         Grid.Column="1"
+                         Margin="8,0"
+                         ui:ControlHelper.PlaceholderText="Leave empty to use same location as input..."/>
+                
+                <Button x:Name="OutputBrowseButton" 
+                        Grid.Column="2" 
+                        Content="Browse" 
+                        Width="100"
+                        Click="BrowseOutputFolder_Click"/>
+            </Grid>
+
+            <!-- Options -->
+            <ui:SimpleStackPanel Spacing="12" Margin="0,8,0,0">
+                <TextBlock Text="Options:" 
+                           FontWeight="SemiBold"
+                           Margin="0,0,0,4"/>
+
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel Grid.Column="0">
+                        <CheckBox x:Name="ConvertToStlCheckBox" 
+                                  Content="Convert to STL after repair"
+                                  Margin="0,0,0,8"/>
+                        <CheckBox x:Name="CloneFolderHierarchyCheckBox" 
+                                  Content="Clone folder hierarchy"
+                                  IsChecked="True"/>
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="1">
+                        <TextBlock Text="Timeout per file (seconds):" Margin="0,0,0,4"/>
+                        <ui:NumberBox x:Name="TimeoutNumberBox" 
+                                      Value="600" 
+                                      Minimum="10"
+                                      Maximum="3600"
+                                      SpinButtonPlacementMode="Inline"
+                                      Width="200"
+                                      HorizontalAlignment="Left"/>
+                    </StackPanel>
+                </Grid>
+            </ui:SimpleStackPanel>
+        </ui:SimpleStackPanel>
+
+        <!-- Progress/Output Section -->
+        <Grid Grid.Row="2">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <TextBlock Text="Progress:" 
+                       FontWeight="SemiBold"
+                       Margin="0,0,0,8"/>
+
+            <Border Grid.Row="1" 
+                    BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}" 
+                    BorderThickness="1"
+                    CornerRadius="4"
+                    Background="{DynamicResource SystemControlBackgroundAltHighBrush}">
+                <ScrollViewer x:Name="OutputScrollViewer" VerticalScrollBarVisibility="Auto">
+                    <TextBlock x:Name="OutputTextBlock" 
+                               Padding="12"
+                               FontFamily="Consolas"
+                               FontSize="12"
+                               TextWrapping="Wrap"
+                               Text="Ready to repair models. Select input path and click Start."/>
+                </ScrollViewer>
+            </Border>
+
+            <ProgressBar x:Name="MainProgressBar" 
+                         Grid.Row="2"
+                         Height="6"
+                         Margin="0,12,0,0"
+                         IsIndeterminate="False"
+                         Visibility="Collapsed"/>
+        </Grid>
+
+        <!-- Action Buttons -->
+        <ui:SimpleStackPanel Grid.Row="3" 
+                             Orientation="Horizontal" 
+                             Spacing="12"
+                             HorizontalAlignment="Right"
+                             Margin="0,20,0,0">
+            <Button x:Name="ClearButton" 
+                    Content="Clear" 
+                    Width="100"
+                    Click="Clear_Click"/>
+            <Button x:Name="StartButton" 
+                    Content="Start Repair" 
+                    Width="120"
+                    Style="{StaticResource AccentButtonStyle}"
+                    Click="StartRepair_Click"/>
+        </ui:SimpleStackPanel>
+    </Grid>
+</Window>

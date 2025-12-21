@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Do not remove this test for UTF-8: if "Ω" doesn't appear as greek uppercase omega letter enclosed in quotation marks, you should use an editor that supports UTF-8, not this one. -->
+<package xmlns="http://schemas.microsoft.com/packaging/2015/06/nuspec.xsd">
+  <metadata>
+    <id>meshrepair</id>
+    <version>3.1.0</version>
+    <packageSourceUrl>https://github.com/SynrgStudio/MeshRepair</packageSourceUrl>
+    <owners>SynrgStudio</owners>
+    <title>MeshRepair</title>
+    <authors>SynrgStudio</authors>
+    <projectUrl>https://github.com/SynrgStudio/MeshRepair</projectUrl>
+    <iconUrl>https://raw.githubusercontent.com/SynrgStudio/MeshRepair/main/icon.png</iconUrl>
+    <copyright>2025 SynrgStudio</copyright>
+    <licenseUrl>https://github.com/SynrgStudio/MeshRepair/blob/main/LICENSE</licenseUrl>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <projectSourceUrl>https://github.com/SynrgStudio/MeshRepair</projectSourceUrl>
+    <docsUrl>https://github.com/SynrgStudio/MeshRepair/blob/main/README.md</docsUrl>
+    <bugTrackerUrl>https://github.com/SynrgStudio/MeshRepair/issues</bugTrackerUrl>
+    <tags>meshrepair 3d stl 3mf mesh repair cli</tags>
+    <summary>A powerful CLI tool to repair 3D mesh files (STL, 3MF, OBJ, etc.)</summary>
+    <description>
+MeshRepair is a command-line tool that repairs broken 3D mesh files using Windows 3D Printing API and PrusaSlicer.
+
+## Features
+- Interactive Mode: Run without arguments for guided experience
+- STL Export: Convert repaired models back to STL format
+- Progress Tracking: Visual progress for batch processing
+- Multiple Formats: Supports STL, STEP, 3MF, OBJ, AMF
+- Batch Processing: Repair entire folders with folder hierarchy cloning
+
+## Usage
+Interactive mode:
+```
+meshrepair
+```
+
+Command line:
+```
+meshrepair --inputFilePath "C:\Models" --outputFormat stl
+```
+
+Quick defaults:
+```
+meshrepair -d
+```
+    </description>
+    <releaseNotes>https://github.com/SynrgStudio/MeshRepair/releases/tag/v3.1.0</releaseNotes>
+  </metadata>
+  <files>
+    <file src="tools\**" target="tools" />
+  </files>
+</package>

@@ -38,7 +38,7 @@
  <PropertyGroup>
     <PublishSingleFile>true</PublishSingleFile>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
-    <Version>0.0.2</Version> <!-- or any other target runtime -->
+    <Version>3.1.0</Version> <!-- or any other target runtime -->
  </PropertyGroup>
 
   <ItemGroup>

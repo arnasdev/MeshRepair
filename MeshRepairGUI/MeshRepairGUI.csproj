@@ -1,0 +1,27 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <AssemblyName>MeshRepair-GUI</AssemblyName>
+    <Version>3.0.0</Version>
+    <Authors>SynrgStudio</Authors>
+    <Company>SynrgStudio</Company>
+    <Product>MeshRepair GUI</Product>
+    <Description>Graphical interface for MeshRepair - 3D model repair tool</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ModernWpfUI" Version="0.9.6" />
+    <PackageReference Include="ModernWpfUI.MahApps" Version="0.9.5" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\MeshRepair\MeshRepair.csproj" />
+  </ItemGroup>
+
+</Project>
